@@ -33,7 +33,7 @@ Re:Driveはルートの安全性を保証しません。「安全なルート」
 
 AIによる説明生成はMVPコアの後に導入します。地理的事実はGoogle Maps Platform、難易度は決定論的ルール、説明はAIという責務分担を維持します。
 
-## 想定するリポジトリ構成
+## リポジトリ構成
 
 ```text
 re-drive/
@@ -45,7 +45,43 @@ re-drive/
 └── README.md
 ```
 
-アプリケーション資材は今後追加します。現時点では、実装の前提となる仕様と方針を`docs/`で管理します。
+MobileとAPIは、それぞれのディレクトリで依存関係と環境変数を管理します。SupabaseはPhase 2まで導入しません。
+
+## 開発環境のセットアップ
+
+前提：Node.js 20.19以上、Python 3.11以上、実機確認時はExpo Go。
+
+### Mobile
+
+```bash
+cd apps/mobile
+cp .env.example .env.local
+npm install
+npm start
+```
+
+### API
+
+```bash
+cd apps/api
+cp .env.example .env
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e '.[dev]'
+uvicorn re_drive_api.main:app --reload --env-file .env
+```
+
+起動後は<http://127.0.0.1:8000/api/v1/health>でヘルスチェック、<http://127.0.0.1:8000/docs>でOpenAPIドキュメントを確認できます。
+
+### 検証コマンド
+
+```bash
+npm --prefix apps/mobile run lint
+npm --prefix apps/mobile run typecheck
+apps/api/.venv/bin/pytest apps/api
+apps/api/.venv/bin/ruff check apps/api
+```
 
 ## ドキュメント
 
