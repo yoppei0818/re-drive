@@ -1,12 +1,13 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from re_drive_api.google_routes import (
-    Coordinate,
+from re_drive_api.clients.google_routes import (
     GoogleRoutesResponseError,
     GoogleRoutesTimeoutError,
 )
-from re_drive_api.main import app, get_google_routes_client
+from re_drive_api.main import app
+from re_drive_api.routes.preview_plan import Coordinate, PreviewRoutePlan
+from re_drive_api.routes.router import get_google_routes_client
 
 
 @pytest.fixture
@@ -22,10 +23,10 @@ class StubGoogleRoutesClient:
     ) -> None:
         self.coordinates = coordinates or []
         self.error = error
-        self.received_origin: Coordinate | None = None
+        self.received_plan: PreviewRoutePlan | None = None
 
-    async def compute_preview_route(self, origin: Coordinate) -> list[Coordinate]:
-        self.received_origin = origin
+    async def compute_route(self, plan: PreviewRoutePlan) -> list[Coordinate]:
+        self.received_plan = plan
         if self.error:
             raise self.error
         return self.coordinates
@@ -60,7 +61,10 @@ async def test_preview_route_returns_google_route_in_existing_response_format() 
             origin,
         ]
     }
-    assert routes_client.received_origin == Coordinate(**origin)
+    assert routes_client.received_plan is not None
+    assert routes_client.received_plan.origin == Coordinate(**origin)
+    assert routes_client.received_plan.destination == Coordinate(**origin)
+    assert len(routes_client.received_plan.intermediates) == 3
 
 
 @pytest.mark.anyio

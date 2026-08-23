@@ -1,33 +1,28 @@
-import math
-from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
+from re_drive_api.routes.preview_plan import Coordinate, PreviewRoutePlan
+
 COMPUTE_ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
 FIELD_MASK = "routes.polyline.encodedPolyline"
-EARTH_RADIUS_METERS = 6_371_000
 
 
 class GoogleRoutesError(Exception):
-    """Base exception for failures while retrieving a route from Google."""
+    """Google Routes APIからの経路取得に失敗した場合の基底例外。"""
 
 
 class GoogleRoutesTimeoutError(GoogleRoutesError):
-    """Raised when Google Routes API does not respond before the deadline."""
+    """Google Routes APIが期限内に応答しなかった場合の例外。"""
 
 
 class GoogleRoutesResponseError(GoogleRoutesError):
-    """Raised when Google returns an error or an unusable response."""
-
-
-@dataclass(frozen=True)
-class Coordinate:
-    latitude: float
-    longitude: float
+    """Googleからエラーまたは利用できないレスポンスが返った場合の例外。"""
 
 
 class GoogleRoutesClient:
+    """PreviewRoutePlanをGoogle Routes APIへ送り、道路上の座標列を取得する。"""
+
     def __init__(
         self,
         api_key: str,
@@ -39,7 +34,8 @@ class GoogleRoutesClient:
         self._timeout = httpx.Timeout(timeout_seconds, connect=min(3.0, timeout_seconds))
         self._transport = transport
 
-    async def compute_preview_route(self, origin: Coordinate) -> list[Coordinate]:
+    async def compute_route(self, plan: PreviewRoutePlan) -> list[Coordinate]:
+        """指定された経路計画を計算し、encoded polylineを座標列へ変換する。"""
         try:
             async with httpx.AsyncClient(
                 timeout=self._timeout,
@@ -52,7 +48,7 @@ class GoogleRoutesClient:
                         "X-Goog-Api-Key": self._api_key,
                         "X-Goog-FieldMask": FIELD_MASK,
                     },
-                    json=_build_request_body(origin),
+                    json=_build_request_body(plan),
                 )
         except httpx.TimeoutException as error:
             raise GoogleRoutesTimeoutError from error
@@ -83,17 +79,12 @@ class GoogleRoutesClient:
         return coordinates
 
 
-def _build_request_body(origin: Coordinate) -> dict[str, Any]:
-    # A deterministic triangle makes Phase 0 behavior reproducible while producing a loop.
-    intermediates = [
-        _destination_point(origin, distance_meters=1_500, bearing_degrees=bearing)
-        for bearing in (45, 165, 285)
-    ]
-
+def _build_request_body(plan: PreviewRoutePlan) -> dict[str, Any]:
+    """アプリ内の経路計画をCompute Routesのリクエスト形式へ変換する。"""
     return {
-        "origin": _waypoint(origin),
-        "destination": _waypoint(origin),
-        "intermediates": [_waypoint(coordinate) for coordinate in intermediates],
+        "origin": _waypoint(plan.origin),
+        "destination": _waypoint(plan.destination),
+        "intermediates": [_waypoint(coordinate) for coordinate in plan.intermediates],
         "travelMode": "DRIVE",
         "routingPreference": "TRAFFIC_UNAWARE",
         "computeAlternativeRoutes": False,
@@ -120,45 +111,21 @@ def _waypoint(coordinate: Coordinate) -> dict[str, Any]:
     }
 
 
-def _destination_point(
-    origin: Coordinate,
-    *,
-    distance_meters: float,
-    bearing_degrees: float,
-) -> Coordinate:
-    latitude = math.radians(origin.latitude)
-    longitude = math.radians(origin.longitude)
-    bearing = math.radians(bearing_degrees)
-    angular_distance = distance_meters / EARTH_RADIUS_METERS
-
-    destination_latitude = math.asin(
-        math.sin(latitude) * math.cos(angular_distance)
-        + math.cos(latitude) * math.sin(angular_distance) * math.cos(bearing)
-    )
-    destination_longitude = longitude + math.atan2(
-        math.sin(bearing) * math.sin(angular_distance) * math.cos(latitude),
-        math.cos(angular_distance) - math.sin(latitude) * math.sin(destination_latitude),
-    )
-
-    normalized_longitude = (math.degrees(destination_longitude) + 540) % 360 - 180
-    return Coordinate(
-        latitude=math.degrees(destination_latitude),
-        longitude=normalized_longitude,
-    )
-
-
 def decode_polyline(encoded_polyline: str) -> list[Coordinate]:
+    """GoogleのEncoded Polyline Algorithm Formatを緯度経度へ復号する。"""
     coordinates: list[Coordinate] = []
     latitude = 0
     longitude = 0
     index = 0
 
     while index < len(encoded_polyline):
+        # 各点は絶対座標ではなく、直前の点からの差分として格納されている。
         latitude_delta, index = _decode_value(encoded_polyline, index)
         longitude_delta, index = _decode_value(encoded_polyline, index)
         latitude += latitude_delta
         longitude += longitude_delta
 
+        # Encoded Polylineは緯度経度を10万倍した整数として扱う。
         decoded = Coordinate(latitude=latitude / 100_000, longitude=longitude / 100_000)
         if not (-90 <= decoded.latitude <= 90 and -180 <= decoded.longitude <= 180):
             raise ValueError("Decoded coordinate is outside valid latitude/longitude bounds")
@@ -168,6 +135,7 @@ def decode_polyline(encoded_polyline: str) -> list[Coordinate]:
 
 
 def _decode_value(encoded_polyline: str, index: int) -> tuple[int, int]:
+    """可変長エンコードされた符号付き整数を1つ復号する。"""
     result = 0
     shift = 0
 
@@ -180,6 +148,7 @@ def _decode_value(encoded_polyline: str, index: int) -> tuple[int, int]:
         if value < 0 or value > 63:
             raise ValueError("Invalid character in encoded polyline")
 
+        # 継続フラグを除いた下位5bitを、読み取った順に結合する。
         result |= (value & 0x1F) << shift
         shift += 5
         if value < 0x20:
@@ -187,5 +156,6 @@ def _decode_value(encoded_polyline: str, index: int) -> tuple[int, int]:
         if shift > 30:
             raise ValueError("Encoded polyline value is too large")
 
+    # 最下位bitが符号を表すため、元の符号付き整数へ戻す。
     decoded = ~(result >> 1) if result & 1 else result >> 1
     return decoded, index

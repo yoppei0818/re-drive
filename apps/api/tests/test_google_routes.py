@@ -3,14 +3,14 @@ import json
 import httpx
 import pytest
 
-from re_drive_api.google_routes import (
+from re_drive_api.clients.google_routes import (
     COMPUTE_ROUTES_URL,
-    Coordinate,
     GoogleRoutesClient,
     GoogleRoutesResponseError,
     GoogleRoutesTimeoutError,
     decode_polyline,
 )
+from re_drive_api.routes.preview_plan import Coordinate, create_preview_route_plan
 
 
 def test_decode_polyline_decodes_google_reference_example() -> None:
@@ -50,8 +50,9 @@ async def test_compute_preview_route_sends_loop_request_and_decodes_response() -
         )
 
     client = GoogleRoutesClient("test-api-key", transport=httpx.MockTransport(handler))
+    plan = create_preview_route_plan(Coordinate(35.6812, 139.7671))
 
-    result = await client.compute_preview_route(Coordinate(35.6812, 139.7671))
+    result = await client.compute_route(plan)
 
     assert result == [Coordinate(latitude=38.5, longitude=-120.2)]
 
@@ -75,7 +76,7 @@ async def test_compute_preview_route_rejects_error_or_invalid_response(
     )
 
     with pytest.raises(GoogleRoutesResponseError):
-        await client.compute_preview_route(Coordinate(35.6812, 139.7671))
+        await client.compute_route(create_preview_route_plan(Coordinate(35.6812, 139.7671)))
 
 
 @pytest.mark.anyio
@@ -86,4 +87,4 @@ async def test_compute_preview_route_converts_timeout() -> None:
     client = GoogleRoutesClient("test-api-key", transport=httpx.MockTransport(handler))
 
     with pytest.raises(GoogleRoutesTimeoutError):
-        await client.compute_preview_route(Coordinate(35.6812, 139.7671))
+        await client.compute_route(create_preview_route_plan(Coordinate(35.6812, 139.7671)))
