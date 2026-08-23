@@ -3,6 +3,7 @@ import MapView, { Marker, Polyline, type LatLng } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { type LocationState, useCurrentLocation } from '../hooks/use-current-location';
+import { useLoopRoute } from '../hooks/use-loop-route';
 
 const MAP_DELTA = 0.012;
 
@@ -13,7 +14,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.eyebrow}>PHASE 0 · STEP 2</Text>
+          <Text style={styles.eyebrow}>PHASE 0 · STEP 3</Text>
           <Text style={styles.title}>練習ルート</Text>
         </View>
         <Pressable
@@ -37,11 +38,11 @@ export default function HomeScreen() {
       <View style={styles.routeSummary}>
         <View style={styles.routeIndicator} />
         <View style={styles.routeText}>
-          <Text style={styles.routeTitle}>仮の練習ルート</Text>
-          <Text style={styles.routeDescription}>現在地の周辺に固定形状のルートを表示しています</Text>
+          <Text style={styles.routeTitle}>API連携の練習ルート</Text>
+          <Text style={styles.routeDescription}>FastAPIから取得した座標でルートを表示します</Text>
         </View>
         <View style={styles.statusBadge}>
-          <Text style={styles.statusBadgeText}>描画テスト</Text>
+          <Text style={styles.statusBadgeText}>通信テスト</Text>
         </View>
       </View>
     </SafeAreaView>
@@ -80,7 +81,32 @@ function LocationMap({ state, onRetry }: { state: LocationState; onRetry: () => 
     latitude: state.coordinates.latitude,
     longitude: state.coordinates.longitude,
   };
-  const route = createPreviewRoute(currentLocation);
+
+  return <RouteMap currentLocation={currentLocation} />;
+}
+
+function RouteMap({ currentLocation }: { currentLocation: LatLng }) {
+  const { routeState, retry } = useLoopRoute(currentLocation);
+
+  if (routeState.status === 'loading') {
+    return (
+      <MapPlaceholder>
+        <ActivityIndicator color="#176B45" size="large" />
+        <Text style={styles.placeholderTitle}>周回ルートを取得しています…</Text>
+        <Text style={styles.placeholderDescription}>FastAPIへ現在地を送信しています</Text>
+      </MapPlaceholder>
+    );
+  }
+
+  if (routeState.status === 'error') {
+    return (
+      <MapPlaceholder>
+        <Text style={styles.errorTitle}>周回ルートを取得できませんでした</Text>
+        <Text style={styles.placeholderDescription}>{routeState.message}</Text>
+        <RetryButton onPress={retry} />
+      </MapPlaceholder>
+    );
+  }
 
   return (
     <MapView
@@ -94,7 +120,7 @@ function LocationMap({ state, onRetry }: { state: LocationState; onRetry: () => 
       showsMyLocationButton
       style={styles.map}>
       <Polyline
-        coordinates={route}
+        coordinates={routeState.coordinates}
         lineCap="round"
         lineJoin="round"
         strokeColor="#176B45"
@@ -105,22 +131,11 @@ function LocationMap({ state, onRetry }: { state: LocationState; onRetry: () => 
   );
 }
 
-function createPreviewRoute(origin: LatLng): LatLng[] {
-  return [
-    origin,
-    { latitude: origin.latitude + 0.0025, longitude: origin.longitude + 0.001 },
-    { latitude: origin.latitude + 0.003, longitude: origin.longitude + 0.004 },
-    { latitude: origin.latitude + 0.0005, longitude: origin.longitude + 0.005 },
-    { latitude: origin.latitude - 0.002, longitude: origin.longitude + 0.0025 },
-    origin,
-  ];
-}
-
 function MapPlaceholder({ children }: { children: React.ReactNode }) {
   return <View style={styles.placeholder}>{children}</View>;
 }
 
-function RetryButton({ onPress }: { onPress: () => Promise<void> }) {
+function RetryButton({ onPress }: { onPress: () => void | Promise<void> }) {
   return (
     <Pressable
       accessibilityRole="button"
