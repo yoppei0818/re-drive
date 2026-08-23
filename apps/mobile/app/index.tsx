@@ -1,159 +1,205 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import MapView, { Marker, Polyline, type LatLng } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import {
-  type LocationState,
-  useCurrentLocation,
-} from '../hooks/use-current-location';
+import { type LocationState, useCurrentLocation } from '../hooks/use-current-location';
 
-const steps = [
-  '現在地を取得する',
-  '地図と仮のルートを表示する',
-  'FastAPIから周回ルートを取得する',
-  'Google Mapsへ経路を引き渡す',
-];
+const MAP_DELTA = 0.012;
 
 export default function HomeScreen() {
   const { locationState, getCurrentLocation } = useCurrentLocation();
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>PHASE 0</Text>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.eyebrow}>PHASE 0 · STEP 2</Text>
+          <Text style={styles.title}>練習ルート</Text>
         </View>
-        <Text style={styles.title}>Re:Drive</Text>
-        <Text style={styles.tagline}>久しぶりの運転を、ちょうどいい練習から。</Text>
+        <Pressable
+          accessibilityLabel="現在地を更新"
+          accessibilityRole="button"
+          disabled={locationState.status === 'loading'}
+          onPress={() => void getCurrentLocation()}
+          style={({ pressed }) => [
+            styles.refreshButton,
+            pressed && styles.buttonPressed,
+            locationState.status === 'loading' && styles.buttonDisabled,
+          ]}>
+          <Text style={styles.refreshButtonText}>現在地を更新</Text>
+        </Pressable>
+      </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>現在地の取得</Text>
-          <LocationResult state={locationState} onRetry={getCurrentLocation} />
+      <View style={styles.mapContainer}>
+        <LocationMap state={locationState} onRetry={getCurrentLocation} />
+      </View>
 
-          <View style={styles.stepList}>
-            {steps.map((step, index) => (
-              <View key={step} style={styles.stepRow}>
-                <View style={[styles.stepNumber, index === 0 && styles.activeStepNumber]}>
-                  <Text style={[styles.stepNumberText, index === 0 && styles.activeStepNumberText]}>
-                    {index + 1}
-                  </Text>
-                </View>
-                <Text style={[styles.stepText, index === 0 && styles.activeStepText]}>{step}</Text>
-              </View>
-            ))}
-          </View>
+      <View style={styles.routeSummary}>
+        <View style={styles.routeIndicator} />
+        <View style={styles.routeText}>
+          <Text style={styles.routeTitle}>仮の練習ルート</Text>
+          <Text style={styles.routeDescription}>現在地の周辺に固定形状のルートを表示しています</Text>
+        </View>
+        <View style={styles.statusBadge}>
+          <Text style={styles.statusBadgeText}>描画テスト</Text>
         </View>
       </View>
     </SafeAreaView>
   );
 }
 
-function LocationResult({
-  state,
-  onRetry,
-}: {
-  state: LocationState;
-  onRetry: () => Promise<void>;
-}) {
+function LocationMap({ state, onRetry }: { state: LocationState; onRetry: () => Promise<void> }) {
   if (state.status === 'loading') {
     return (
-      <View style={styles.locationStatus}>
-        <ActivityIndicator color="#176B45" />
-        <Text style={styles.cardDescription}>現在地を取得しています…</Text>
-      </View>
+      <MapPlaceholder>
+        <ActivityIndicator color="#176B45" size="large" />
+        <Text style={styles.placeholderTitle}>現在地を取得しています…</Text>
+        <Text style={styles.placeholderDescription}>地図を準備しています</Text>
+      </MapPlaceholder>
     );
   }
 
-  if (state.status === 'success') {
+  if (state.status !== 'success') {
+    const message =
+      state.status === 'denied'
+        ? state.canAskAgain
+          ? '地図を表示するには位置情報の許可が必要です。'
+          : '端末の設定からRe:Driveの位置情報を許可してください。'
+        : state.message;
+
     return (
-      <View style={styles.locationResult}>
-        <Text style={styles.successText}>現在地を取得しました</Text>
-        <Text style={styles.coordinateText}>緯度: {state.coordinates.latitude.toFixed(6)}</Text>
-        <Text style={styles.coordinateText}>経度: {state.coordinates.longitude.toFixed(6)}</Text>
-        <RetryButton label="現在地を更新" onPress={onRetry} />
-      </View>
+      <MapPlaceholder>
+        <Text style={styles.errorTitle}>現在地を取得できませんでした</Text>
+        <Text style={styles.placeholderDescription}>{message}</Text>
+        <RetryButton onPress={onRetry} />
+      </MapPlaceholder>
     );
   }
 
-  const message =
-    state.status === 'denied'
-      ? state.canAskAgain
-        ? '現在地の取得には位置情報の許可が必要です。'
-        : '位置情報が許可されていません。端末の設定からRe:Driveの位置情報を許可してください。'
-      : state.message;
+  const currentLocation: LatLng = {
+    latitude: state.coordinates.latitude,
+    longitude: state.coordinates.longitude,
+  };
+  const route = createPreviewRoute(currentLocation);
 
   return (
-    <View style={styles.locationResult}>
-      <Text style={styles.errorText}>{message}</Text>
-      <RetryButton label="もう一度試す" onPress={onRetry} />
-    </View>
+    <MapView
+      initialRegion={{
+        ...currentLocation,
+        latitudeDelta: MAP_DELTA,
+        longitudeDelta: MAP_DELTA,
+      }}
+      mapPadding={{ top: 24, right: 24, bottom: 24, left: 24 }}
+      showsCompass
+      showsMyLocationButton
+      style={styles.map}>
+      <Polyline
+        coordinates={route}
+        lineCap="round"
+        lineJoin="round"
+        strokeColor="#176B45"
+        strokeWidth={6}
+      />
+      <Marker coordinate={currentLocation} title="現在地" description="練習ルートの出発地点" />
+    </MapView>
   );
 }
 
-function RetryButton({ label, onPress }: { label: string; onPress: () => Promise<void> }) {
+function createPreviewRoute(origin: LatLng): LatLng[] {
+  return [
+    origin,
+    { latitude: origin.latitude + 0.0025, longitude: origin.longitude + 0.001 },
+    { latitude: origin.latitude + 0.003, longitude: origin.longitude + 0.004 },
+    { latitude: origin.latitude + 0.0005, longitude: origin.longitude + 0.005 },
+    { latitude: origin.latitude - 0.002, longitude: origin.longitude + 0.0025 },
+    origin,
+  ];
+}
+
+function MapPlaceholder({ children }: { children: React.ReactNode }) {
+  return <View style={styles.placeholder}>{children}</View>;
+}
+
+function RetryButton({ onPress }: { onPress: () => Promise<void> }) {
   return (
     <Pressable
       accessibilityRole="button"
       onPress={() => void onPress()}
-      style={({ pressed }) => [styles.retryButton, pressed && styles.retryButtonPressed]}>
-      <Text style={styles.retryButtonText}>{label}</Text>
+      style={({ pressed }) => [styles.retryButton, pressed && styles.buttonPressed]}>
+      <Text style={styles.retryButtonText}>もう一度試す</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F3F7F4' },
-  container: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
-  badge: {
-    alignSelf: 'flex-start',
-    marginBottom: 16,
-    borderRadius: 999,
-    backgroundColor: '#DDEDE3',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
-  badgeText: { color: '#176B45', fontSize: 12, fontWeight: '700', letterSpacing: 1.2 },
-  title: { color: '#12372A', fontSize: 40, fontWeight: '800', letterSpacing: -1 },
-  tagline: { marginTop: 8, color: '#4D625A', fontSize: 16, lineHeight: 24 },
-  card: {
-    marginTop: 36,
-    borderRadius: 24,
-    backgroundColor: '#FFFFFF',
-    padding: 24,
-    shadowColor: '#12372A',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    elevation: 3,
-  },
-  cardTitle: { color: '#12372A', fontSize: 20, fontWeight: '700' },
-  cardDescription: { marginTop: 10, color: '#66756F', fontSize: 14, lineHeight: 22 },
-  locationStatus: { marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  locationResult: { marginTop: 16, alignItems: 'flex-start' },
-  successText: { marginBottom: 8, color: '#176B45', fontSize: 14, fontWeight: '700' },
-  coordinateText: { color: '#4D625A', fontSize: 14, fontVariant: ['tabular-nums'], lineHeight: 22 },
-  errorText: { color: '#9C3D31', fontSize: 14, lineHeight: 22 },
-  retryButton: {
-    marginTop: 14,
+  eyebrow: { color: '#176B45', fontSize: 11, fontWeight: '800', letterSpacing: 1.1 },
+  title: { marginTop: 4, color: '#12372A', fontSize: 28, fontWeight: '800' },
+  refreshButton: {
     borderRadius: 12,
-    backgroundColor: '#176B45',
-    paddingHorizontal: 16,
+    backgroundColor: '#DDEDE3',
+    paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  retryButtonPressed: { opacity: 0.75 },
-  retryButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-  stepList: { marginTop: 24, gap: 16 },
-  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  stepNumber: {
-    height: 28,
-    width: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 14,
-    backgroundColor: '#EDF1EF',
+  refreshButtonText: { color: '#176B45', fontSize: 13, fontWeight: '700' },
+  buttonPressed: { opacity: 0.7 },
+  buttonDisabled: { opacity: 0.5 },
+  mapContainer: {
+    flex: 1,
+    marginHorizontal: 16,
+    overflow: 'hidden',
+    borderRadius: 24,
+    backgroundColor: '#E4ECE7',
   },
-  activeStepNumber: { backgroundColor: '#176B45' },
-  stepNumberText: { color: '#75817C', fontSize: 13, fontWeight: '700' },
-  activeStepNumberText: { color: '#FFFFFF' },
-  stepText: { flex: 1, color: '#75817C', fontSize: 14 },
-  activeStepText: { color: '#12372A', fontWeight: '600' },
+  map: { flex: 1 },
+  placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
+  placeholderTitle: { marginTop: 16, color: '#12372A', fontSize: 17, fontWeight: '700' },
+  errorTitle: { color: '#9C3D31', fontSize: 17, fontWeight: '700', textAlign: 'center' },
+  placeholderDescription: {
+    marginTop: 8,
+    color: '#66756F',
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 20,
+    borderRadius: 12,
+    backgroundColor: '#176B45',
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+  },
+  retryButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  routeSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    margin: 16,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    shadowColor: '#12372A',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.07,
+    shadowRadius: 14,
+    elevation: 2,
+  },
+  routeIndicator: { height: 42, width: 5, borderRadius: 3, backgroundColor: '#176B45' },
+  routeText: { flex: 1, marginLeft: 12 },
+  routeTitle: { color: '#12372A', fontSize: 15, fontWeight: '700' },
+  routeDescription: { marginTop: 3, color: '#66756F', fontSize: 12, lineHeight: 17 },
+  statusBadge: {
+    marginLeft: 8,
+    borderRadius: 999,
+    backgroundColor: '#F0F4F1',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  statusBadgeText: { color: '#66756F', fontSize: 10, fontWeight: '700' },
 });
