@@ -1,7 +1,12 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from re_drive_api.main import app
+from re_drive_api.google_routes import (
+    Coordinate,
+    GoogleRoutesResponseError,
+    GoogleRoutesTimeoutError,
+)
+from re_drive_api.main import app, get_google_routes_client
 
 
 @pytest.fixture
@@ -9,19 +14,53 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
+class StubGoogleRoutesClient:
+    def __init__(
+        self,
+        coordinates: list[Coordinate] | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.coordinates = coordinates or []
+        self.error = error
+        self.received_origin: Coordinate | None = None
+
+    async def compute_preview_route(self, origin: Coordinate) -> list[Coordinate]:
+        self.received_origin = origin
+        if self.error:
+            raise self.error
+        return self.coordinates
+
+
+@pytest.fixture(autouse=True)
+def clear_dependency_overrides() -> None:
+    yield
+    app.dependency_overrides.clear()
+
+
 @pytest.mark.anyio
-async def test_preview_route_returns_loop_around_origin() -> None:
+async def test_preview_route_returns_google_route_in_existing_response_format() -> None:
     origin = {"latitude": 35.6812, "longitude": 139.7671}
+    routes_client = StubGoogleRoutesClient(
+        coordinates=[
+            Coordinate(latitude=35.6812, longitude=139.7671),
+            Coordinate(latitude=35.69, longitude=139.78),
+            Coordinate(latitude=35.6812, longitude=139.7671),
+        ]
+    )
+    app.dependency_overrides[get_google_routes_client] = lambda: routes_client
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post("/api/v1/routes/preview", json={"origin": origin})
 
     assert response.status_code == 200
-    coordinates = response.json()["coordinates"]
-    assert len(coordinates) == 6
-    assert coordinates[0] == origin
-    assert coordinates[-1] == origin
-    assert coordinates[1] == pytest.approx({"latitude": 35.6837, "longitude": 139.7681})
+    assert response.json() == {
+        "coordinates": [
+            origin,
+            {"latitude": 35.69, "longitude": 139.78},
+            origin,
+        ]
+    }
+    assert routes_client.received_origin == Coordinate(**origin)
 
 
 @pytest.mark.anyio
@@ -34,7 +73,50 @@ async def test_preview_route_returns_loop_around_origin() -> None:
     ],
 )
 async def test_preview_route_rejects_invalid_origin(origin: dict[str, object]) -> None:
+    app.dependency_overrides[get_google_routes_client] = lambda: StubGoogleRoutesClient()
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post("/api/v1/routes/preview", json={"origin": origin})
 
     assert response.status_code == 422
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("error", "expected_status"),
+    [
+        (GoogleRoutesTimeoutError(), 504),
+        (GoogleRoutesResponseError(), 502),
+    ],
+)
+async def test_preview_route_converts_google_failure_to_http_error(
+    error: Exception,
+    expected_status: int,
+) -> None:
+    app.dependency_overrides[get_google_routes_client] = lambda: StubGoogleRoutesClient(
+        error=error
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/routes/preview",
+            json={"origin": {"latitude": 35.6812, "longitude": 139.7671}},
+        )
+
+    assert response.status_code == expected_status
+    assert "Google" not in response.text
+
+
+@pytest.mark.anyio
+async def test_preview_route_returns_service_unavailable_without_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GOOGLE_MAPS_API_KEY", raising=False)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/routes/preview",
+            json={"origin": {"latitude": 35.6812, "longitude": 139.7671}},
+        )
+
+    assert response.status_code == 503

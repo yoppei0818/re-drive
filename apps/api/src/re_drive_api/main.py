@@ -1,7 +1,15 @@
-from typing import Literal
+import os
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
+
+from re_drive_api.google_routes import (
+    Coordinate,
+    GoogleRoutesClient,
+    GoogleRoutesResponseError,
+    GoogleRoutesTimeoutError,
+)
 
 
 class RouteCoordinate(BaseModel):
@@ -25,35 +33,50 @@ class HealthResponse(BaseModel):
 api_router = APIRouter(prefix="/api/v1")
 
 
+def get_google_routes_client() -> GoogleRoutesClient:
+    api_key = os.getenv("GOOGLE_MAPS_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ルート検索を利用できません",
+        )
+    return GoogleRoutesClient(api_key)
+
+
 @api_router.get("/health", response_model=HealthResponse, tags=["system"])
 async def health() -> HealthResponse:
     return HealthResponse(status="ok", service="re-drive-api")
 
 
 @api_router.post("/routes/preview", response_model=PreviewRouteResponse, tags=["routes"])
-async def preview_route(request: PreviewRouteRequest) -> PreviewRouteResponse:
-    """Return a temporary loop around the supplied origin for Phase 0 integration testing."""
-    origin = request.origin
-    offsets = [
-        (0.0, 0.0),
-        (0.0025, 0.001),
-        (0.003, 0.004),
-        (0.0005, 0.005),
-        (-0.002, 0.0025),
-        (0.0, 0.0),
-    ]
-    coordinates = [
-        RouteCoordinate(
-            latitude=_clamp(origin.latitude + latitude_offset, -90, 90),
-            longitude=_clamp(origin.longitude + longitude_offset, -180, 180),
+async def preview_route(
+    request: PreviewRouteRequest,
+    routes_client: Annotated[GoogleRoutesClient, Depends(get_google_routes_client)],
+) -> PreviewRouteResponse:
+    """Return a road-following loop around the supplied origin."""
+    try:
+        route = await routes_client.compute_preview_route(
+            Coordinate(
+                latitude=request.origin.latitude,
+                longitude=request.origin.longitude,
+            )
         )
-        for latitude_offset, longitude_offset in offsets
+    except GoogleRoutesTimeoutError as error:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="ルート検索がタイムアウトしました",
+        ) from error
+    except GoogleRoutesResponseError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="ルートを取得できませんでした",
+        ) from error
+
+    coordinates = [
+        RouteCoordinate(latitude=coordinate.latitude, longitude=coordinate.longitude)
+        for coordinate in route
     ]
     return PreviewRouteResponse(coordinates=coordinates)
-
-
-def _clamp(value: float, minimum: float, maximum: float) -> float:
-    return min(max(value, minimum), maximum)
 
 
 app = FastAPI(

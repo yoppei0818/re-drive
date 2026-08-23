@@ -1,6 +1,6 @@
 # Re:Drive API
 
-FastAPIで構築するRe:Driveのバックエンドです。Phase 0では、起動確認用のヘルスチェックとモバイル連携確認用の仮ルートを提供します。
+FastAPIで構築するRe:Driveのバックエンドです。Phase 0では、起動確認用のヘルスチェックとGoogle Routes APIで生成するプレビュールートを提供します。
 
 ## セットアップ
 
@@ -22,9 +22,15 @@ uvicorn re_drive_api.main:app --reload --env-file .env
 - APIドキュメント: <http://127.0.0.1:8000/docs>
 - ヘルスチェック: <http://127.0.0.1:8000/api/v1/health>
 
-## 仮の周回ルート
+## 道路に沿ったプレビュー周回ルート
 
-`POST /api/v1/routes/preview` に現在地を送ると、その地点を始点・終点とする固定形状の座標配列を返します。Google Routes APIにはまだ接続しません。
+Google CloudでRoutes APIを有効にし、サーバー用APIキーを`.env`へ設定します。
+
+```dotenv
+GOOGLE_MAPS_API_KEY=your-server-side-api-key
+```
+
+`POST /api/v1/routes/preview` に現在地を送ると、固定方角・固定距離の経由地を使ってGoogle Routes APIで周回経路を計算し、道路に沿った座標配列を返します。
 
 ```json
 {
