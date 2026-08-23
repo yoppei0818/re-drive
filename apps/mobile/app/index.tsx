@@ -1,4 +1,10 @@
-import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import {
+  type LocationState,
+  useCurrentLocation,
+} from '../hooks/use-current-location';
 
 const steps = [
   '現在地を取得する',
@@ -8,6 +14,8 @@ const steps = [
 ];
 
 export default function HomeScreen() {
+  const { locationState, getCurrentLocation } = useCurrentLocation();
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
@@ -18,10 +26,8 @@ export default function HomeScreen() {
         <Text style={styles.tagline}>久しぶりの運転を、ちょうどいい練習から。</Text>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>技術検証を開始します</Text>
-          <Text style={styles.cardDescription}>
-            モバイルアプリの初期構築が完了しました。次は実機での位置情報取得に進みます。
-          </Text>
+          <Text style={styles.cardTitle}>現在地の取得</Text>
+          <LocationResult state={locationState} onRetry={getCurrentLocation} />
 
           <View style={styles.stepList}>
             {steps.map((step, index) => (
@@ -38,6 +44,59 @@ export default function HomeScreen() {
         </View>
       </View>
     </SafeAreaView>
+  );
+}
+
+function LocationResult({
+  state,
+  onRetry,
+}: {
+  state: LocationState;
+  onRetry: () => Promise<void>;
+}) {
+  if (state.status === 'loading') {
+    return (
+      <View style={styles.locationStatus}>
+        <ActivityIndicator color="#176B45" />
+        <Text style={styles.cardDescription}>現在地を取得しています…</Text>
+      </View>
+    );
+  }
+
+  if (state.status === 'success') {
+    return (
+      <View style={styles.locationResult}>
+        <Text style={styles.successText}>現在地を取得しました</Text>
+        <Text style={styles.coordinateText}>緯度: {state.coordinates.latitude.toFixed(6)}</Text>
+        <Text style={styles.coordinateText}>経度: {state.coordinates.longitude.toFixed(6)}</Text>
+        <RetryButton label="現在地を更新" onPress={onRetry} />
+      </View>
+    );
+  }
+
+  const message =
+    state.status === 'denied'
+      ? state.canAskAgain
+        ? '現在地の取得には位置情報の許可が必要です。'
+        : '位置情報が許可されていません。端末の設定からRe:Driveの位置情報を許可してください。'
+      : state.message;
+
+  return (
+    <View style={styles.locationResult}>
+      <Text style={styles.errorText}>{message}</Text>
+      <RetryButton label="もう一度試す" onPress={onRetry} />
+    </View>
+  );
+}
+
+function RetryButton({ label, onPress }: { label: string; onPress: () => Promise<void> }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={() => void onPress()}
+      style={({ pressed }) => [styles.retryButton, pressed && styles.retryButtonPressed]}>
+      <Text style={styles.retryButtonText}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -68,6 +127,20 @@ const styles = StyleSheet.create({
   },
   cardTitle: { color: '#12372A', fontSize: 20, fontWeight: '700' },
   cardDescription: { marginTop: 10, color: '#66756F', fontSize: 14, lineHeight: 22 },
+  locationStatus: { marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  locationResult: { marginTop: 16, alignItems: 'flex-start' },
+  successText: { marginBottom: 8, color: '#176B45', fontSize: 14, fontWeight: '700' },
+  coordinateText: { color: '#4D625A', fontSize: 14, fontVariant: ['tabular-nums'], lineHeight: 22 },
+  errorText: { color: '#9C3D31', fontSize: 14, lineHeight: 22 },
+  retryButton: {
+    marginTop: 14,
+    borderRadius: 12,
+    backgroundColor: '#176B45',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  retryButtonPressed: { opacity: 0.75 },
+  retryButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
   stepList: { marginTop: 24, gap: 16 },
   stepRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   stepNumber: {
