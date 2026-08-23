@@ -1,7 +1,10 @@
-import * as Location from 'expo-location';
-import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import {
+  type LocationState,
+  useCurrentLocation,
+} from '../hooks/use-current-location';
 
 const steps = [
   '現在地を取得する',
@@ -10,41 +13,8 @@ const steps = [
   'Google Mapsへ経路を引き渡す',
 ];
 
-type LocationState =
-  | { status: 'loading' }
-  | { status: 'success'; coordinates: Location.LocationObjectCoords }
-  | { status: 'denied'; canAskAgain: boolean }
-  | { status: 'error'; message: string };
-
 export default function HomeScreen() {
-  const [locationState, setLocationState] = useState<LocationState>({ status: 'loading' });
-
-  const getCurrentLocation = useCallback(async () => {
-    setLocationState({ status: 'loading' });
-
-    try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-
-      if (!permission.granted) {
-        setLocationState({ status: 'denied', canAskAgain: permission.canAskAgain });
-        return;
-      }
-
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      setLocationState({ status: 'success', coordinates: location.coords });
-    } catch {
-      setLocationState({
-        status: 'error',
-        message: '現在地を取得できませんでした。位置情報サービスを確認して、もう一度お試しください。',
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    void getCurrentLocation();
-  }, [getCurrentLocation]);
+  const { locationState, getCurrentLocation } = useCurrentLocation();
 
   return (
     <SafeAreaView style={styles.safeArea}>
