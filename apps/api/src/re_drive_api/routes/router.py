@@ -8,6 +8,7 @@ from re_drive_api.clients.google_routes import (
     GoogleRoutesResponseError,
     GoogleRoutesTimeoutError,
 )
+from re_drive_api.routes.maps_url import build_google_maps_directions_url
 from re_drive_api.routes.preview_plan import Coordinate, create_preview_route_plan
 from re_drive_api.routes.schemas import PreviewRouteRequest, PreviewRouteResponse, RouteCoordinate
 
@@ -55,4 +56,7 @@ async def preview_route(
         RouteCoordinate(latitude=coordinate.latitude, longitude=coordinate.longitude)
         for coordinate in route
     ]
-    return PreviewRouteResponse(coordinates=coordinates)
+    return PreviewRouteResponse(
+        coordinates=coordinates,
+        google_maps_url=build_google_maps_directions_url(plan),
+    )

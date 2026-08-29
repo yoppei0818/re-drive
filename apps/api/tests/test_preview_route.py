@@ -54,13 +54,13 @@ async def test_preview_route_returns_google_route_in_existing_response_format() 
         response = await client.post("/api/v1/routes/preview", json={"origin": origin})
 
     assert response.status_code == 200
-    assert response.json() == {
-        "coordinates": [
-            origin,
-            {"latitude": 35.69, "longitude": 139.78},
-            origin,
-        ]
-    }
+    body = response.json()
+    assert body["coordinates"] == [
+        origin,
+        {"latitude": 35.69, "longitude": 139.78},
+        origin,
+    ]
+    assert body["google_maps_url"].startswith("https://www.google.com/maps/dir/?api=1")
     assert routes_client.received_plan is not None
     assert routes_client.received_plan.origin == Coordinate(**origin)
     assert routes_client.received_plan.destination == Coordinate(**origin)
