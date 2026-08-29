@@ -18,3 +18,4 @@ class PreviewRouteResponse(BaseModel):
     """モバイルのPolylineへそのまま渡せる座標列。"""
 
     coordinates: list[RouteCoordinate]
+    google_maps_url: str

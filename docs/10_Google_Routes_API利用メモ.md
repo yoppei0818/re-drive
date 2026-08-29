@@ -280,6 +280,41 @@ Routes APIは従量課金です。2026年8月時点の公式価格表では、`C
 
 Routes APIが返したencoded polylineをMaps URLへ直接渡すのではなく、Routes APIへ渡した出発地・経由地・目的地をGoogle Maps URLへ再利用する設計が基本です。同じ地点を渡しても、Google Mapsアプリ側の計算時刻や設定によって完全に同一の経路になる保証はない点に注意します。
 
+### Maps URL連携の初期方針
+
+Maps URLにはRoutes APIから取得したencoded polylineを直接渡せません。`PreviewRoutePlan`の出発地・3つの経由地・目的地を同じ順番で渡し、Google Maps側で経路を再計算します。
+
+初期の保証範囲は「同じ経由地点を同じ順番で通る、概ね同じ周回ルート」とし、アプリ内Polylineとの完全一致は保証しません。モバイルでは次の注意書きをGoogle Maps起動ボタン付近へ表示します。
+
+```text
+交通状況などにより、Google Mapsで表示される経路が一部異なる場合があります。
+```
+
+差が生じる主な要因は次のとおりです。
+
+- Re:DriveのPhase 0では`TRAFFIC_UNAWARE`を使用している
+- Google Mapsは起動時の交通状況を考慮して経路を再計算する
+- Google Maps側のユーザー設定や道路情報更新が影響する
+- 緯度経度の地点が別の道路位置へスナップされる場合がある
+- 起動後や走行中にGoogle Mapsが経路を再計算する場合がある
+
+### 実機で比較する項目
+
+- 全体の周回方向
+- 通過する主要道路
+- 大きな迂回の有無
+- 距離と所要時間の差
+- 将来の初心者向け評価へ影響しそうな道路変更の有無
+
+差が許容できない場合は、その場で大規模な構成変更を行わず、次の順で検証します。
+
+1. `TRAFFIC_AWARE_OPTIMAL`へ変更した場合の一致度と上位SKUの費用を比較する
+2. 経由地の位置、方角、数を調整する
+3. Maps URLによる引き渡し方式を再検討する
+4. 必要な場合はGoogle Navigation SDKなど、同じ経路を扱える構成を検討する
+
+`TRAFFIC_AWARE_OPTIMAL`は上位SKUになるため、料金を確認してから採用を判断します。
+
 ## 参考資料
 
 共有資料は概念理解の入口として使用し、仕様・料金・セキュリティはGoogle公式資料を正とします。
@@ -295,4 +330,3 @@ Routes APIが返したencoded polylineをMaps URLへ直接渡すのではなく�
 - [Google公式：API security best practices](https://developers.google.com/maps/api-security-best-practices)
 - [Google公式：Routes API usage and billing](https://developers.google.com/maps/documentation/routes/usage-and-billing)
 - [Google公式：Google Maps Platform pricing](https://developers.google.com/maps/billing-and-pricing/pricing)
-

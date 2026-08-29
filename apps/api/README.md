@@ -41,6 +41,22 @@ GOOGLE_MAPS_API_KEY=your-server-side-api-key
 }
 ```
 
+レスポンスには、アプリ内表示用の座標列と、同じ出発地・経由地・目的地をGoogle Mapsで開くUniversal URLを含みます。
+
+```json
+{
+  "coordinates": [
+    {
+      "latitude": 35.6812,
+      "longitude": 139.7671
+    }
+  ],
+  "google_maps_url": "https://www.google.com/maps/dir/?api=1&..."
+}
+```
+
+Google Mapsでは経路が再計算されるため、アプリ内のPolylineと完全に一致する保証はありません。
+
 ## 検証
 
 ```bash
