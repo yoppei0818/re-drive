@@ -3,26 +3,49 @@ export type RouteCoordinate = {
   longitude: number;
 };
 
-type LoopRouteResponse = {
+export type LoopRouteResponse = {
   coordinates: RouteCoordinate[];
+  googleMapsUrl: string;
+};
+
+type LoopRouteApiResponse = {
+  coordinates: RouteCoordinate[];
+  google_maps_url: string;
 };
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/$/, '');
+const REQUEST_TIMEOUT_MS = 10_000;
 
 export async function fetchLoopRoute(
   origin: RouteCoordinate,
   signal?: AbortSignal,
-): Promise<RouteCoordinate[]> {
+): Promise<LoopRouteResponse> {
   if (!API_BASE_URL) {
     throw new Error('APIの接続先が設定されていません。EXPO_PUBLIC_API_BASE_URLを確認してください。');
   }
 
-  const response = await fetch(`${API_BASE_URL}/routes/preview`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ origin }),
-    signal,
-  });
+  const requestController = new AbortController();
+  const abortRequest = () => requestController.abort();
+  const timeout = setTimeout(abortRequest, REQUEST_TIMEOUT_MS);
+  signal?.addEventListener('abort', abortRequest);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/routes/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ origin }),
+      signal: requestController.signal,
+    });
+  } catch (error) {
+    if (requestController.signal.aborted && !signal?.aborted) {
+      throw new Error('ルート取得APIへの接続がタイムアウトしました。接続先を確認してください。');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abortRequest);
+  }
 
   if (!response.ok) {
     throw new Error(`ルート取得APIがエラーを返しました（${response.status}）。`);
@@ -34,11 +57,19 @@ export async function fetchLoopRoute(
     throw new Error('ルート取得APIのレスポンス形式が正しくありません。');
   }
 
-  return body.coordinates;
+  return {
+    coordinates: body.coordinates,
+    googleMapsUrl: body.google_maps_url,
+  };
 }
 
-function isLoopRouteResponse(value: unknown): value is LoopRouteResponse {
-  if (!isRecord(value) || !Array.isArray(value.coordinates) || value.coordinates.length < 2) {
+function isLoopRouteResponse(value: unknown): value is LoopRouteApiResponse {
+  if (
+    !isRecord(value) ||
+    !Array.isArray(value.coordinates) ||
+    value.coordinates.length < 2 ||
+    !isGoogleMapsUrl(value.google_maps_url)
+  ) {
     return false;
   }
 
@@ -48,6 +79,19 @@ function isLoopRouteResponse(value: unknown): value is LoopRouteResponse {
       isValidNumber(coordinate.latitude, -90, 90) &&
       isValidNumber(coordinate.longitude, -180, 180),
   );
+}
+
+function isGoogleMapsUrl(value: unknown): value is string {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.hostname === 'www.google.com' && url.pathname === '/maps/dir/';
+  } catch {
+    return false;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

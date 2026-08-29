@@ -2,12 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 
 import {
   fetchLoopRoute,
+  type LoopRouteResponse,
   type RouteCoordinate,
 } from '../services/loop-route-api';
 
 export type LoopRouteState =
   | { status: 'loading' }
-  | { status: 'success'; coordinates: RouteCoordinate[] }
+  | ({ status: 'success' } & LoopRouteResponse)
   | { status: 'error'; message: string };
 
 export function useLoopRoute(origin: RouteCoordinate) {
@@ -22,8 +23,8 @@ export function useLoopRoute(origin: RouteCoordinate) {
       setRouteState({ status: 'loading' });
 
       try {
-        const coordinates = await fetchLoopRoute({ latitude, longitude }, controller.signal);
-        setRouteState({ status: 'success', coordinates });
+        const route = await fetchLoopRoute({ latitude, longitude }, controller.signal);
+        setRouteState({ status: 'success', ...route });
       } catch (error) {
         if (controller.signal.aborted) {
           return;

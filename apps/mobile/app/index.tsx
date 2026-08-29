@@ -1,4 +1,5 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Polyline, type LatLng } from 'react-native-maps';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -14,7 +15,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.eyebrow}>PHASE 0 · STEP 3</Text>
+          <Text style={styles.eyebrow}>PHASE 0 · STEP 4</Text>
           <Text style={styles.title}>練習ルート</Text>
         </View>
         <Pressable
@@ -31,32 +32,24 @@ export default function HomeScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.mapContainer}>
-        <LocationMap state={locationState} onRetry={getCurrentLocation} />
-      </View>
-
-      <View style={styles.routeSummary}>
-        <View style={styles.routeIndicator} />
-        <View style={styles.routeText}>
-          <Text style={styles.routeTitle}>API連携の練習ルート</Text>
-          <Text style={styles.routeDescription}>FastAPIから取得した座標でルートを表示します</Text>
-        </View>
-        <View style={styles.statusBadge}>
-          <Text style={styles.statusBadgeText}>通信テスト</Text>
-        </View>
-      </View>
+      <LocationContent state={locationState} onRetry={getCurrentLocation} />
     </SafeAreaView>
   );
 }
 
-function LocationMap({ state, onRetry }: { state: LocationState; onRetry: () => Promise<void> }) {
+function LocationContent({ state, onRetry }: { state: LocationState; onRetry: () => Promise<void> }) {
   if (state.status === 'loading') {
     return (
-      <MapPlaceholder>
-        <ActivityIndicator color="#176B45" size="large" />
-        <Text style={styles.placeholderTitle}>現在地を取得しています…</Text>
-        <Text style={styles.placeholderDescription}>地図を準備しています</Text>
-      </MapPlaceholder>
+      <>
+        <View style={styles.mapContainer}>
+          <MapPlaceholder>
+            <ActivityIndicator color="#176B45" size="large" />
+            <Text style={styles.placeholderTitle}>現在地を取得しています…</Text>
+            <Text style={styles.placeholderDescription}>地図を準備しています</Text>
+          </MapPlaceholder>
+        </View>
+        <RouteSummary />
+      </>
     );
   }
 
@@ -69,11 +62,16 @@ function LocationMap({ state, onRetry }: { state: LocationState; onRetry: () => 
         : state.message;
 
     return (
-      <MapPlaceholder>
-        <Text style={styles.errorTitle}>現在地を取得できませんでした</Text>
-        <Text style={styles.placeholderDescription}>{message}</Text>
-        <RetryButton onPress={onRetry} />
-      </MapPlaceholder>
+      <>
+        <View style={styles.mapContainer}>
+          <MapPlaceholder>
+            <Text style={styles.errorTitle}>現在地を取得できませんでした</Text>
+            <Text style={styles.placeholderDescription}>{message}</Text>
+            <RetryButton onPress={onRetry} />
+          </MapPlaceholder>
+        </View>
+        <RouteSummary />
+      </>
     );
   }
 
@@ -82,52 +80,142 @@ function LocationMap({ state, onRetry }: { state: LocationState; onRetry: () => 
     longitude: state.coordinates.longitude,
   };
 
-  return <RouteMap currentLocation={currentLocation} />;
+  return <RouteContent currentLocation={currentLocation} />;
 }
 
-function RouteMap({ currentLocation }: { currentLocation: LatLng }) {
+function RouteContent({ currentLocation }: { currentLocation: LatLng }) {
   const { routeState, retry } = useLoopRoute(currentLocation);
+  const [isOpeningMaps, setIsOpeningMaps] = useState(false);
+  const [mapsError, setMapsError] = useState<string | null>(null);
+
+  async function openGoogleMaps(url: string) {
+    setIsOpeningMaps(true);
+    setMapsError(null);
+
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (!canOpen) {
+        throw new Error('この端末ではGoogle Mapsを開けません。');
+      }
+      await Linking.openURL(url);
+    } catch (error) {
+      setMapsError(
+        error instanceof Error ? error.message : 'Google Mapsを開けませんでした。もう一度お試しください。',
+      );
+    } finally {
+      setIsOpeningMaps(false);
+    }
+  }
 
   if (routeState.status === 'loading') {
     return (
-      <MapPlaceholder>
-        <ActivityIndicator color="#176B45" size="large" />
-        <Text style={styles.placeholderTitle}>周回ルートを取得しています…</Text>
-        <Text style={styles.placeholderDescription}>FastAPIへ現在地を送信しています</Text>
-      </MapPlaceholder>
+      <>
+        <View style={styles.mapContainer}>
+          <MapPlaceholder>
+            <ActivityIndicator color="#176B45" size="large" />
+            <Text style={styles.placeholderTitle}>周回ルートを取得しています…</Text>
+            <Text style={styles.placeholderDescription}>FastAPIへ現在地を送信しています</Text>
+          </MapPlaceholder>
+        </View>
+        <RouteSummary />
+      </>
     );
   }
 
   if (routeState.status === 'error') {
     return (
-      <MapPlaceholder>
-        <Text style={styles.errorTitle}>周回ルートを取得できませんでした</Text>
-        <Text style={styles.placeholderDescription}>{routeState.message}</Text>
-        <RetryButton onPress={retry} />
-      </MapPlaceholder>
+      <>
+        <View style={styles.mapContainer}>
+          <MapPlaceholder>
+            <Text style={styles.errorTitle}>周回ルートを取得できませんでした</Text>
+            <Text style={styles.placeholderDescription}>{routeState.message}</Text>
+            <RetryButton onPress={retry} />
+          </MapPlaceholder>
+        </View>
+        <RouteSummary />
+      </>
     );
   }
 
   return (
-    <MapView
-      initialRegion={{
-        ...currentLocation,
-        latitudeDelta: MAP_DELTA,
-        longitudeDelta: MAP_DELTA,
-      }}
-      mapPadding={{ top: 24, right: 24, bottom: 24, left: 24 }}
-      showsCompass
-      showsMyLocationButton
-      style={styles.map}>
-      <Polyline
-        coordinates={routeState.coordinates}
-        lineCap="round"
-        lineJoin="round"
-        strokeColor="#176B45"
-        strokeWidth={6}
+    <>
+      <View style={styles.mapContainer}>
+        <MapView
+          initialRegion={{
+            ...currentLocation,
+            latitudeDelta: MAP_DELTA,
+            longitudeDelta: MAP_DELTA,
+          }}
+          mapPadding={{ top: 24, right: 24, bottom: 24, left: 24 }}
+          showsCompass
+          showsMyLocationButton
+          style={styles.map}>
+          <Polyline
+            coordinates={routeState.coordinates}
+            lineCap="round"
+            lineJoin="round"
+            strokeColor="#176B45"
+            strokeWidth={6}
+          />
+          <Marker coordinate={currentLocation} title="現在地" description="練習ルートの出発地点" />
+        </MapView>
+      </View>
+      <RouteSummary
+        googleMapsUrl={routeState.googleMapsUrl}
+        isOpening={isOpeningMaps}
+        mapsError={mapsError}
+        onOpenMaps={openGoogleMaps}
       />
-      <Marker coordinate={currentLocation} title="現在地" description="練習ルートの出発地点" />
-    </MapView>
+    </>
+  );
+}
+
+function RouteSummary({
+  googleMapsUrl,
+  isOpening = false,
+  mapsError,
+  onOpenMaps,
+}: {
+  googleMapsUrl?: string;
+  isOpening?: boolean;
+  mapsError?: string | null;
+  onOpenMaps?: (url: string) => Promise<void>;
+}) {
+  const isDisabled = !googleMapsUrl || !onOpenMaps || isOpening;
+
+  return (
+    <View style={styles.routeSummary}>
+      <View style={styles.routeSummaryHeader}>
+        <View style={styles.routeIndicator} />
+        <View style={styles.routeText}>
+          <Text style={styles.routeTitle}>API連携の練習ルート</Text>
+          <Text style={styles.routeDescription}>FastAPIから取得した座標でルートを表示します</Text>
+        </View>
+        <View style={styles.statusBadge}>
+          <Text style={styles.statusBadgeText}>通信テスト</Text>
+        </View>
+      </View>
+      <Pressable
+        accessibilityLabel="練習ルートをGoogle Mapsで開く"
+        accessibilityRole="button"
+        disabled={isDisabled}
+        onPress={() => googleMapsUrl && onOpenMaps && void onOpenMaps(googleMapsUrl)}
+        style={({ pressed }) => [
+          styles.mapsButton,
+          pressed && styles.buttonPressed,
+          isDisabled && styles.buttonDisabled,
+        ]}>
+        {isOpening ? (
+          <ActivityIndicator color="#FFFFFF" size="small" />
+        ) : (
+          <Text style={styles.mapsButtonText}>Google Mapsで開く</Text>
+        )}
+      </Pressable>
+      <Text style={styles.mapsNotice}>
+        交通状況などにより、Google Mapsで表示される経路が一部異なる場合があります。
+      </Text>
+      {mapsError ? <Text style={styles.mapsError}>{mapsError}</Text> : null}
+    </View>
   );
 }
 
@@ -193,8 +281,6 @@ const styles = StyleSheet.create({
   },
   retryButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
   routeSummary: {
-    flexDirection: 'row',
-    alignItems: 'center',
     margin: 16,
     borderRadius: 18,
     backgroundColor: '#FFFFFF',
@@ -205,6 +291,7 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 2,
   },
+  routeSummaryHeader: { flexDirection: 'row', alignItems: 'center' },
   routeIndicator: { height: 42, width: 5, borderRadius: 3, backgroundColor: '#176B45' },
   routeText: { flex: 1, marginLeft: 12 },
   routeTitle: { color: '#12372A', fontSize: 15, fontWeight: '700' },
@@ -217,4 +304,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   statusBadgeText: { color: '#66756F', fontSize: 10, fontWeight: '700' },
+  mapsButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    marginTop: 14,
+    borderRadius: 12,
+    backgroundColor: '#176B45',
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+  },
+  mapsButtonText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
+  mapsNotice: { marginTop: 8, color: '#66756F', fontSize: 10, lineHeight: 15 },
+  mapsError: { marginTop: 6, color: '#9C3D31', fontSize: 11, lineHeight: 16 },
 });
