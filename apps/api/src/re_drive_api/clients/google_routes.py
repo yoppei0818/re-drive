@@ -89,8 +89,8 @@ def _build_request_body(plan: PreviewRoutePlan) -> dict[str, Any]:
         "routingPreference": "TRAFFIC_UNAWARE",
         "computeAlternativeRoutes": False,
         "routeModifiers": {
-            "avoidTolls": True,
-            "avoidHighways": True,
+            "avoidTolls": plan.conditions.avoid_tolls,
+            "avoidHighways": plan.conditions.avoid_highways,
             "avoidFerries": True,
         },
         "polylineQuality": "HIGH_QUALITY",

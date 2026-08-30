@@ -10,6 +10,15 @@ from re_drive_api.routes.preview_plan import Coordinate, PreviewRoutePlan
 from re_drive_api.routes.router import get_google_routes_client
 
 
+def preview_request(origin: dict[str, object]) -> dict[str, object]:
+    return {
+        "origin": origin,
+        "target_duration_minutes": 45,
+        "difficulty": "challenge",
+        "avoid": {"tolls": False, "highways": True},
+    }
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"
@@ -51,7 +60,7 @@ async def test_preview_route_returns_google_route_in_existing_response_format() 
     app.dependency_overrides[get_google_routes_client] = lambda: routes_client
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/v1/routes/preview", json={"origin": origin})
+        response = await client.post("/api/v1/routes/preview", json=preview_request(origin))
 
     assert response.status_code == 200
     body = response.json()
@@ -65,6 +74,10 @@ async def test_preview_route_returns_google_route_in_existing_response_format() 
     assert routes_client.received_plan.origin == Coordinate(**origin)
     assert routes_client.received_plan.destination == Coordinate(**origin)
     assert len(routes_client.received_plan.intermediates) == 3
+    assert routes_client.received_plan.conditions.target_duration_minutes == 45
+    assert routes_client.received_plan.conditions.difficulty == "challenge"
+    assert routes_client.received_plan.conditions.avoid_tolls is False
+    assert routes_client.received_plan.conditions.avoid_highways is True
 
 
 @pytest.mark.anyio
@@ -80,7 +93,7 @@ async def test_preview_route_rejects_invalid_origin(origin: dict[str, object]) -
     app.dependency_overrides[get_google_routes_client] = lambda: StubGoogleRoutesClient()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post("/api/v1/routes/preview", json={"origin": origin})
+        response = await client.post("/api/v1/routes/preview", json=preview_request(origin))
 
     assert response.status_code == 422
 
@@ -104,7 +117,7 @@ async def test_preview_route_converts_google_failure_to_http_error(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/v1/routes/preview",
-            json={"origin": {"latitude": 35.6812, "longitude": 139.7671}},
+            json=preview_request({"latitude": 35.6812, "longitude": 139.7671}),
         )
 
     assert response.status_code == expected_status
@@ -120,7 +133,30 @@ async def test_preview_route_returns_service_unavailable_without_api_key(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/v1/routes/preview",
-            json={"origin": {"latitude": 35.6812, "longitude": 139.7671}},
+            json=preview_request({"latitude": 35.6812, "longitude": 139.7671}),
         )
 
     assert response.status_code == 503
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "invalid_fields",
+    [
+        {"target_duration_minutes": 20},
+        {"difficulty": "expert"},
+        {"avoid": {"tolls": "yes", "highways": True}},
+        {"avoid": {"tolls": True}},
+    ],
+)
+async def test_preview_route_rejects_invalid_conditions(
+    invalid_fields: dict[str, object],
+) -> None:
+    app.dependency_overrides[get_google_routes_client] = lambda: StubGoogleRoutesClient()
+    request = preview_request({"latitude": 35.6812, "longitude": 139.7671})
+    request.update(invalid_fields)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/routes/preview", json=request)
+
+    assert response.status_code == 422

@@ -11,6 +11,35 @@
 
 ## エンドポイント
 
+### `POST /routes/preview`
+
+Phase 1の条件入力から固定経由地の周回ルートを取得する検証用エンドポイントです。
+
+```json
+{
+  "origin": {
+    "latitude": 35.6812,
+    "longitude": 139.7671
+  },
+  "target_duration_minutes": 45,
+  "difficulty": "standard",
+  "avoid": {
+    "tolls": true,
+    "highways": true
+  }
+}
+```
+
+- `target_duration_minutes` は `30`、`45`、`60` のいずれかとする
+- `difficulty` は `easy`、`standard`、`challenge` のいずれかとする
+- `avoid.tolls` と `avoid.highways` はGoogle Routes APIの回避条件へ反映する
+- 希望時間と難易度は経路計画へ受け渡すが、固定経由地の形状にはまだ反映しない
+- 不正な座標、列挙値、回避条件には `422` を返す
+
+レスポンスは地図表示用の `coordinates` とGoogle Maps引き渡し用の
+`google_maps_url` を返します。このエンドポイントは候補生成の実装後に
+`POST /routes/generate` へ統合する想定です。
+
 ### `POST /routes/generate`
 
 周回ルート候補を生成します。
@@ -22,6 +51,7 @@
     "longitude": 139.7671
   },
   "target_duration_minutes": 30,
+  "difficulty": "standard",
   "waypoints": [],
   "avoid": {
     "highways": true,

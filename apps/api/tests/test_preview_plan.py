@@ -1,6 +1,6 @@
 import math
 
-from re_drive_api.routes.preview_plan import Coordinate, create_preview_route_plan
+from re_drive_api.routes.preview_plan import Coordinate, RouteConditions, create_preview_route_plan
 
 
 def test_create_preview_route_plan_returns_deterministic_loop() -> None:
@@ -21,6 +21,17 @@ def test_create_preview_route_plan_places_intermediates_about_1500_meters_away()
 
     for intermediate in plan.intermediates:
         assert math.isclose(_distance_meters(origin, intermediate), 1_500, abs_tol=0.1)
+
+
+def test_create_preview_route_plan_keeps_conditions_without_changing_waypoints() -> None:
+    origin = Coordinate(latitude=35.6812, longitude=139.7671)
+    conditions = RouteConditions(60, "challenge", avoid_tolls=False, avoid_highways=True)
+
+    default_plan = create_preview_route_plan(origin)
+    plan = create_preview_route_plan(origin, conditions)
+
+    assert plan.conditions == conditions
+    assert plan.intermediates == default_plan.intermediates
 
 
 def _distance_meters(start: Coordinate, end: Coordinate) -> float:
