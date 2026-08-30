@@ -1,3 +1,5 @@
+import { type RouteConditions, validateRouteConditions } from './route-conditions';
+
 export type RouteCoordinate = {
   latitude: number;
   longitude: number;
@@ -18,10 +20,15 @@ const REQUEST_TIMEOUT_MS = 10_000;
 
 export async function fetchLoopRoute(
   origin: RouteCoordinate,
+  conditions: RouteConditions,
   signal?: AbortSignal,
 ): Promise<LoopRouteResponse> {
   if (!API_BASE_URL) {
     throw new Error('APIの接続先が設定されていません。EXPO_PUBLIC_API_BASE_URLを確認してください。');
+  }
+
+  if (!validateRouteConditions(conditions)) {
+    throw new Error('ルート条件が正しくありません。選択内容を確認してください。');
   }
 
   const requestController = new AbortController();
@@ -34,7 +41,15 @@ export async function fetchLoopRoute(
     response = await fetch(`${API_BASE_URL}/routes/preview`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ origin }),
+      body: JSON.stringify({
+        origin,
+        target_duration_minutes: conditions.targetDurationMinutes,
+        difficulty: conditions.difficulty,
+        avoid: {
+          tolls: conditions.avoidTolls,
+          highways: conditions.avoidHighways,
+        },
+      }),
       signal: requestController.signal,
     });
   } catch (error) {
