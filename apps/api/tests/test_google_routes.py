@@ -10,7 +10,7 @@ from re_drive_api.clients.google_routes import (
     GoogleRoutesTimeoutError,
     decode_polyline,
 )
-from re_drive_api.routes.preview_plan import Coordinate, create_preview_route_plan
+from re_drive_api.routes.preview_plan import Coordinate, RouteConditions, create_preview_route_plan
 
 
 def test_decode_polyline_decodes_google_reference_example() -> None:
@@ -40,7 +40,7 @@ async def test_compute_preview_route_sends_loop_request_and_decodes_response() -
         assert body["travelMode"] == "DRIVE"
         assert body["routingPreference"] == "TRAFFIC_UNAWARE"
         assert body["routeModifiers"] == {
-            "avoidTolls": True,
+            "avoidTolls": False,
             "avoidHighways": True,
             "avoidFerries": True,
         }
@@ -50,7 +50,10 @@ async def test_compute_preview_route_sends_loop_request_and_decodes_response() -
         )
 
     client = GoogleRoutesClient("test-api-key", transport=httpx.MockTransport(handler))
-    plan = create_preview_route_plan(Coordinate(35.6812, 139.7671))
+    plan = create_preview_route_plan(
+        Coordinate(35.6812, 139.7671),
+        RouteConditions(45, "easy", avoid_tolls=False, avoid_highways=True),
+    )
 
     result = await client.compute_route(plan)
 

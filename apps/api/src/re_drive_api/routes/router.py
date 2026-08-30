@@ -9,7 +9,7 @@ from re_drive_api.clients.google_routes import (
     GoogleRoutesTimeoutError,
 )
 from re_drive_api.routes.maps_url import build_google_maps_directions_url
-from re_drive_api.routes.preview_plan import Coordinate, create_preview_route_plan
+from re_drive_api.routes.preview_plan import Coordinate, RouteConditions, create_preview_route_plan
 from re_drive_api.routes.schemas import PreviewRouteRequest, PreviewRouteResponse, RouteCoordinate
 
 router = APIRouter(prefix="/routes", tags=["routes"])
@@ -36,7 +36,15 @@ async def preview_route(
         latitude=request.origin.latitude,
         longitude=request.origin.longitude,
     )
-    plan = create_preview_route_plan(origin)
+    plan = create_preview_route_plan(
+        origin,
+        RouteConditions(
+            target_duration_minutes=request.target_duration_minutes,
+            difficulty=request.difficulty,
+            avoid_tolls=request.avoid.tolls,
+            avoid_highways=request.avoid.highways,
+        ),
+    )
 
     try:
         route = await routes_client.compute_route(plan)

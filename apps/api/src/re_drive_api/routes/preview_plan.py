@@ -1,5 +1,6 @@
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Literal
 
 EARTH_RADIUS_METERS = 6_371_000
 
@@ -13,17 +14,44 @@ class Coordinate:
 
 
 @dataclass(frozen=True)
+class RouteConditions:
+    """モバイルから受け取り、後続の候補生成で利用するルート条件。"""
+
+    target_duration_minutes: Literal[30, 45, 60]
+    difficulty: Literal["easy", "standard", "challenge"]
+    avoid_tolls: bool
+    avoid_highways: bool
+
+
+@dataclass(frozen=True)
 class PreviewRoutePlan:
     """Routes APIとMaps URLの両方で再利用する周回経路の地点計画。"""
 
     origin: Coordinate
     intermediates: tuple[Coordinate, ...]
     destination: Coordinate
+    conditions: RouteConditions = field(
+        default_factory=lambda: RouteConditions(
+            target_duration_minutes=30,
+            difficulty="standard",
+            avoid_tolls=True,
+            avoid_highways=True,
+        )
+    )
 
 
-def create_preview_route_plan(origin: Coordinate) -> PreviewRoutePlan:
+def create_preview_route_plan(
+    origin: Coordinate,
+    conditions: RouteConditions | None = None,
+) -> PreviewRoutePlan:
     """現在地を基準に、再現可能な三角形状の周回経路計画を作る。"""
-    # Phase 0では入力が同じなら経由地も同じにし、実機確認を再現しやすくする。
+    # Step 1では条件を計画へ受け渡すが、固定経由地の形状にはまだ反映しない。
+    conditions = conditions or RouteConditions(
+        target_duration_minutes=30,
+        difficulty="standard",
+        avoid_tolls=True,
+        avoid_highways=True,
+    )
     intermediates = tuple(
         _destination_point(origin, distance_meters=1_500, bearing_degrees=bearing)
         for bearing in (45, 165, 285)
@@ -32,6 +60,7 @@ def create_preview_route_plan(origin: Coordinate) -> PreviewRoutePlan:
         origin=origin,
         intermediates=intermediates,
         destination=origin,
+        conditions=conditions,
     )
 
 

@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, Field, StrictBool
 
 
 class RouteCoordinate(BaseModel):
@@ -8,10 +10,20 @@ class RouteCoordinate(BaseModel):
     longitude: float = Field(ge=-180, le=180)
 
 
+class RouteAvoidance(BaseModel):
+    """ルート検索時に避けたい道路条件。"""
+
+    tolls: StrictBool
+    highways: StrictBool
+
+
 class PreviewRouteRequest(BaseModel):
     """プレビュー周回ルートの生成リクエスト。"""
 
     origin: RouteCoordinate
+    target_duration_minutes: Literal[30, 45, 60]
+    difficulty: Literal["easy", "standard", "challenge"]
+    avoid: RouteAvoidance
 
 
 class PreviewRouteResponse(BaseModel):
