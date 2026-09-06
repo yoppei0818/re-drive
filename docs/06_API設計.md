@@ -33,7 +33,9 @@ Phase 1の条件入力から固定経由地の周回ルートを取得する検�
 - `target_duration_minutes` は `30`、`45`、`60` のいずれかとする
 - `difficulty` は `easy`、`standard`、`challenge` のいずれかとする
 - `avoid.tolls` と `avoid.highways` はGoogle Routes APIの回避条件へ反映する
-- 希望時間と難易度は経路計画へ受け渡すが、固定経由地の形状にはまだ反映しない
+- 希望時間から候補半径を計算し、方角を分散した3つの中間地点候補を内部生成する
+- `preview` では候補群の先頭だけをRoutes APIへ送り、複数候補の比較は後続Stepで追加する
+- 難易度は経路計画へ受け渡すが、経由地の形状にはまだ反映しない
 - 不正な座標、列挙値、回避条件には `422` を返す
 
 レスポンスは地図表示用の `coordinates` とGoogle Maps引き渡し用の

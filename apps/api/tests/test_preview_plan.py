@@ -1,6 +1,13 @@
 import math
 
-from re_drive_api.routes.preview_plan import Coordinate, RouteConditions, create_preview_route_plan
+import pytest
+
+from re_drive_api.routes.preview_plan import (
+    Coordinate,
+    RouteConditions,
+    create_preview_route_candidates,
+    create_preview_route_plan,
+)
 
 
 def test_create_preview_route_plan_returns_deterministic_loop() -> None:
@@ -23,15 +30,41 @@ def test_create_preview_route_plan_places_intermediates_about_1500_meters_away()
         assert math.isclose(_distance_meters(origin, intermediate), 1_500, abs_tol=0.1)
 
 
-def test_create_preview_route_plan_keeps_conditions_without_changing_waypoints() -> None:
+def test_create_preview_route_plan_scales_waypoint_radius_for_target_duration() -> None:
     origin = Coordinate(latitude=35.6812, longitude=139.7671)
     conditions = RouteConditions(60, "challenge", avoid_tolls=False, avoid_highways=True)
 
-    default_plan = create_preview_route_plan(origin)
     plan = create_preview_route_plan(origin, conditions)
 
     assert plan.conditions == conditions
-    assert plan.intermediates == default_plan.intermediates
+    for intermediate in plan.intermediates:
+        assert math.isclose(_distance_meters(origin, intermediate), 3_000, abs_tol=0.1)
+
+
+def test_create_preview_route_candidates_returns_three_distinct_deterministic_plans() -> None:
+    origin = Coordinate(latitude=35.6812, longitude=139.7671)
+    conditions = RouteConditions(45, "standard", avoid_tolls=True, avoid_highways=True)
+
+    first = create_preview_route_candidates(origin, conditions)
+    second = create_preview_route_candidates(origin, conditions)
+
+    assert first == second
+    assert len(first) == 3
+    assert len({plan.intermediates for plan in first}) == 3
+    assert all(plan.origin == origin and plan.destination == origin for plan in first)
+    assert all(plan.conditions == conditions for plan in first)
+    for plan in first:
+        for intermediate in plan.intermediates:
+            assert math.isclose(_distance_meters(origin, intermediate), 2_250, abs_tol=0.1)
+
+
+@pytest.mark.parametrize("candidate_count", [0, 4])
+def test_create_preview_route_candidates_rejects_unsupported_count(candidate_count: int) -> None:
+    origin = Coordinate(latitude=35.6812, longitude=139.7671)
+    conditions = RouteConditions(30, "easy", avoid_tolls=True, avoid_highways=True)
+
+    with pytest.raises(ValueError):
+        create_preview_route_candidates(origin, conditions, candidate_count=candidate_count)
 
 
 def _distance_meters(start: Coordinate, end: Coordinate) -> float:

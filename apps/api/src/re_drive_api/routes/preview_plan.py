@@ -3,6 +3,10 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 EARTH_RADIUS_METERS = 6_371_000
+BASE_RADIUS_METERS = 1_500
+BASE_DURATION_MINUTES = 30
+CANDIDATE_BEARING_OFFSETS = (0, 40, 80)
+INTERMEDIATE_BEARINGS = (45, 165, 285)
 
 
 @dataclass(frozen=True)
@@ -44,24 +48,58 @@ def create_preview_route_plan(
     origin: Coordinate,
     conditions: RouteConditions | None = None,
 ) -> PreviewRoutePlan:
-    """現在地を基準に、再現可能な三角形状の周回経路計画を作る。"""
-    # Step 1では条件を計画へ受け渡すが、固定経由地の形状にはまだ反映しない。
+    """互換性のため、候補群の先頭にあたる周回経路計画を作る。"""
     conditions = conditions or RouteConditions(
         target_duration_minutes=30,
         difficulty="standard",
         avoid_tolls=True,
         avoid_highways=True,
     )
+    return create_preview_route_candidates(origin, conditions, candidate_count=1)[0]
+
+
+def create_preview_route_candidates(
+    origin: Coordinate,
+    conditions: RouteConditions,
+    *,
+    candidate_count: int = 3,
+) -> tuple[PreviewRoutePlan, ...]:
+    """希望時間に応じた半径と分散した方角から、再現可能な候補群を作る。"""
+    if not 1 <= candidate_count <= len(CANDIDATE_BEARING_OFFSETS):
+        raise ValueError(
+            f"candidate_count must be between 1 and {len(CANDIDATE_BEARING_OFFSETS)}"
+        )
+
+    radius_meters = BASE_RADIUS_METERS * (
+        conditions.target_duration_minutes / BASE_DURATION_MINUTES
+    )
+    return tuple(
+        _create_route_plan(
+            origin,
+            conditions,
+            radius_meters=radius_meters,
+            bearing_offset=bearing_offset,
+        )
+        for bearing_offset in CANDIDATE_BEARING_OFFSETS[:candidate_count]
+    )
+
+
+def _create_route_plan(
+    origin: Coordinate,
+    conditions: RouteConditions,
+    *,
+    radius_meters: float,
+    bearing_offset: float,
+) -> PreviewRoutePlan:
     intermediates = tuple(
-        _destination_point(origin, distance_meters=1_500, bearing_degrees=bearing)
-        for bearing in (45, 165, 285)
+        _destination_point(
+            origin,
+            distance_meters=radius_meters,
+            bearing_degrees=bearing + bearing_offset,
+        )
+        for bearing in INTERMEDIATE_BEARINGS
     )
-    return PreviewRoutePlan(
-        origin=origin,
-        intermediates=intermediates,
-        destination=origin,
-        conditions=conditions,
-    )
+    return PreviewRoutePlan(origin, intermediates, origin, conditions)
 
 
 def _destination_point(
