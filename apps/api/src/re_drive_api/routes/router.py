@@ -9,7 +9,11 @@ from re_drive_api.clients.google_routes import (
     GoogleRoutesTimeoutError,
 )
 from re_drive_api.routes.maps_url import build_google_maps_directions_url
-from re_drive_api.routes.preview_plan import Coordinate, RouteConditions, create_preview_route_plan
+from re_drive_api.routes.preview_plan import (
+    Coordinate,
+    RouteConditions,
+    create_preview_route_candidates,
+)
 from re_drive_api.routes.schemas import PreviewRouteRequest, PreviewRouteResponse, RouteCoordinate
 
 router = APIRouter(prefix="/routes", tags=["routes"])
@@ -36,7 +40,7 @@ async def preview_route(
         latitude=request.origin.latitude,
         longitude=request.origin.longitude,
     )
-    plan = create_preview_route_plan(
+    plans = create_preview_route_candidates(
         origin,
         RouteConditions(
             target_duration_minutes=request.target_duration_minutes,
@@ -45,6 +49,8 @@ async def preview_route(
             avoid_highways=request.avoid.highways,
         ),
     )
+    # Step 2では候補地点だけを生成し、Routes APIでの比較は次のStepで行う。
+    plan = plans[0]
 
     try:
         route = await routes_client.compute_route(plan)
